@@ -1101,6 +1101,43 @@ wasm_cluster_increase_checkpointing_counter(WASMCluster *cluster)
     return 0;
 }
 
+/* Arrive at a checkpoint rendezvous and wait until the checkpoint thread
+ * continues this thread.
+ *
+ * The previous sequence was "increase the counter, then
+ * wasm_cluster_thread_waiting_run()".  The checkpoint thread calls
+ * wasm_cluster_thread_continue_all() as soon as the counter reaches the thread
+ * count, so it could set this thread RUNNING before the thread entered
+ * waiting_run(), which then overwrote it with STOP and waited forever (lost
+ * wakeup).  It also waited on wait_cond without holding wait_lock.
+ *
+ * Here the thread marks itself STOP under wait_lock *before* it is counted, so
+ * a continue can only happen afterwards and is never overwritten, and it waits
+ * with wait_lock held.  wait_lock is never held while taking cluster->lock
+ * (continue_all takes cluster->lock, then wait_lock). */
+int
+wasm_cluster_checkpoint_arrive_and_wait(WASMExecEnv *exec_env)
+{
+    os_mutex_lock(&exec_env->wait_lock);
+    exec_env->current_status->running_status = STATUS_STOP;
+    os_mutex_unlock(&exec_env->wait_lock);
+
+    if (wasm_cluster_increase_checkpointing_counter(exec_env->cluster) == -1)
+        return -1;
+
+#ifdef WAMR_CR_INJECT_RENDEZVOUS_DELAY_US
+    /* Same fault injection as the interpreter hook (experiment only). */
+    usleep(WAMR_CR_INJECT_RENDEZVOUS_DELAY_US);
+#endif
+
+    os_mutex_lock(&exec_env->wait_lock);
+    while (!wasm_cluster_thread_is_running(exec_env)) {
+        os_cond_wait(&exec_env->wait_cond, &exec_env->wait_lock);
+    }
+    os_mutex_unlock(&exec_env->wait_lock);
+    return 0;
+}
+
 int
 wasm_cluster_reset_checkpointing_counter(WASMCluster *cluster)
 {

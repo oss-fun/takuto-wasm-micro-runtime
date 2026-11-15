@@ -244,6 +244,10 @@ int
 wasm_cluster_decrease_checkpointing_counter(WASMCluster *cluster);
 int
 wasm_cluster_increase_checkpointing_counter(WASMCluster *cluster);
+/* Count this thread as arrived at the checkpoint rendezvous and wait until it
+ * is continued, without losing a continue that races with the arrival. */
+int
+wasm_cluster_checkpoint_arrive_and_wait(WASMExecEnv *exec_env);
 int
 wasm_cluster_reset_checkpointing_counter(WASMCluster *cluster);
 

@@ -1133,9 +1133,8 @@ wasm_interp_call_func_import(WASMModuleInstance *module_inst,
 #if WASM_ENABLE_THREAD_MGR != 0
 #define END_CHECKPOINT()                                                \
     do {                                                                \
-        wasm_cluster_increase_checkpointing_counter(exec_env->cluster); \
         wasm_cluster_thread_send_signal(exec_env, WAMR_SIG_CHECKPOINT); \
-        wasm_cluster_thread_waiting_run(exec_env);                      \
+        wasm_cluster_checkpoint_arrive_and_wait(exec_env);              \
     } while (0)
 #else
 #define END_CHECKPOINT() \
@@ -1148,16 +1147,14 @@ wasm_interp_call_func_import(WASMModuleInstance *module_inst,
 #define DO_CHECKPOINT() /*こっちがマルチスレッド，各スレッドの処理*/                          \
     do {                                                                    \
         printf("do_checkpoint_1\n");                                        \
-        int status =                                                        \
-            wasm_cluster_increase_checkpointing_counter(exec_env->cluster); \
+        /* arrive + wait without losing a racing continue_all (the old  */  \
+        /* "increase counter, then waiting_run" could hang here)        */  \
+        int status = wasm_cluster_checkpoint_arrive_and_wait(exec_env);     \
         if (status == -1) {                                                 \
             perror("failed to increase checkpointing counter\n");           \
             exit(1);                                                        \
         }                                                                   \
         printf("do_checkpoint_2\n");                                        \
-    /*ここで止まってる？*/\
-        WAMR_CR_INJECT_RENDEZVOUS_DELAY();                                  \
-        wasm_cluster_thread_waiting_run(exec_env);                          \
         printf("do_checkpoint_3\n");                                        \
         char *thread_id_ch;                                                 \
         INIT_THREAD_ID_CH();                                                \

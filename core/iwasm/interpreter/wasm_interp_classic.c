@@ -1117,6 +1117,19 @@ wasm_interp_call_func_import(WASMModuleInstance *module_inst,
         }                                                                    \
     } while (0)
 
+/* Fault injection for the checkpoint rendezvous (experiment only).  Build with
+   -DWAMR_CR_INJECT_RENDEZVOUS_DELAY_US=<us> to sleep after a thread has
+   counted itself as arrived and before it waits to be continued.  This widens
+   the window in which the checkpoint thread may call continue_all before the
+   arriving thread starts waiting. */
+#ifdef WAMR_CR_INJECT_RENDEZVOUS_DELAY_US
+#include <unistd.h>
+#define WAMR_CR_INJECT_RENDEZVOUS_DELAY() \
+    usleep(WAMR_CR_INJECT_RENDEZVOUS_DELAY_US)
+#else
+#define WAMR_CR_INJECT_RENDEZVOUS_DELAY() (void)0
+#endif
+
 #if WASM_ENABLE_THREAD_MGR != 0
 #define END_CHECKPOINT()                                                \
     do {                                                                \
@@ -1143,6 +1156,7 @@ wasm_interp_call_func_import(WASMModuleInstance *module_inst,
         }                                                                   \
         printf("do_checkpoint_2\n");                                        \
     /*ここで止まってる？*/\
+        WAMR_CR_INJECT_RENDEZVOUS_DELAY();                                  \
         wasm_cluster_thread_waiting_run(exec_env);                          \
         printf("do_checkpoint_3\n");                                        \
         char *thread_id_ch;                                                 \

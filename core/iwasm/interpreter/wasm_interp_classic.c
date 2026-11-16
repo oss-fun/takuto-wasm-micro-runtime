@@ -1129,6 +1129,9 @@ wasm_interp_call_func_import(WASMModuleInstance *module_inst,
 #else
 #define WAMR_CR_INJECT_RENDEZVOUS_DELAY() (void)0
 #endif
+#ifdef WAMR_CR_INJECT_RESTORE_PARK_DELAY_US
+#include <unistd.h>
+#endif
 
 #if WASM_ENABLE_THREAD_MGR != 0
 #define END_CHECKPOINT()                                                \
@@ -1728,6 +1731,14 @@ wasm_interp_call_func_bytecode(WASMModuleInstance *module,
         // opcode, so normal dispatch below re-executes the wait and re-enters
         // the wait list), then resumes the rest. This guarantees a waiter is
         // back in its wait before any normal thread can atomic.notify.
+#ifdef WAMR_CR_INJECT_RESTORE_PARK_DELAY_US
+        /* Fault injection (experiment only): delay parking of child threads
+           after the restore barrier.  restore_sync_routine first waits for
+           the main thread to park and then continues the waiters, so only
+           children are delayed; otherwise everyone parks before it starts. */
+        if (exec_env->thread_arg != NULL)
+            usleep(WAMR_CR_INJECT_RESTORE_PARK_DELAY_US);
+#endif
         os_mutex_lock(&exec_env->wait_lock);
         wasm_cluster_thread_waiting_run(exec_env);
         os_mutex_unlock(&exec_env->wait_lock);
